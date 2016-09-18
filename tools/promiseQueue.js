@@ -7,7 +7,7 @@ var Promise = require('bluebird');
  * @constructor
  */
 function Queue(concurrency) {
-  if (!this instanceof Queue) return new Queue(concurrency);
+  if (!(this instanceof Queue)) return new Queue(concurrency);
 
   this.queue    = [];
   this.runCount = 0;
