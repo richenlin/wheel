@@ -57,7 +57,7 @@ Queue.prototype.pause = function () {
 };
 
 /**
- * 继续
+ * 恢复
  */
 Queue.prototype.resume = function () {
   this.pauseState = false;
@@ -69,7 +69,6 @@ Queue.prototype.resume = function () {
 
 /**
  * 消费
- * @returns {*}
  */
 Queue.prototype._consumer = function () {
   var self = this;
