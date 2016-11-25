@@ -3,9 +3,17 @@
  */
 'use strict';
 
-const lodash      = require('lodash');
-const evaluate    = require('tools/evaluate');
-const watchModule = require('tools/watchModule');
+const path = require('path');
+
+const lodash = require('lodash');
+
+const evaluate     = require('tools/evaluate');
+const watchModule  = require('tools/watchModule');
+const getIpAddress = require('tools/getIpAddress');
+
+const argvConfigRootDirExp = /^--configRootDir=(.*)/i;
+const argvConfigExp        = /^--config=(.*)/i;
+const argvConfigFileExp    = /^--configFile=(.*)/i;
 
 /**
  * 根据默认目录读取配置文件,默认配置文件为当前运行目录下的package.json和config目录
@@ -16,10 +24,11 @@ const watchModule = require('tools/watchModule');
  * @param packagePath   {String}      指定package.json
  * @param extendDefault [{Object}]    附加的默认文件路径
  * @param extendWatch   [{String}]    附加的监视路径
+ * @param configRootDir {String}      配置文件根目录
  * @return {Object}
  */
-function loadConfig(packagePath, extendDefault = [], extendWatch = []) {
-  if (!packagePath)packagePath = process.cwd() + '/package.json';
+function loadConfig(packagePath, extendDefault = [], extendWatch = [], configRootDir = 'config') {
+  if (!packagePath) packagePath = process.cwd() + '/package.json';
   if (!resolveFile(packagePath)) {
     console.error(`can't find package.json on : ${packagePath}`);
     process.exit(1);
@@ -27,27 +36,52 @@ function loadConfig(packagePath, extendDefault = [], extendWatch = []) {
   const project = process.project = require(packagePath);
   process.ip = getIpAddress();
 
-  let argvConfig          = {}, argvConfigFile = '';
-  const argvConfigExp     = /^\-\-config\=(.*)/i;
-  const argvConfigFileExp = /^\-\-configFile\=(.*)/i;
+  let argvConfig = {}, argvConfigFiles = [];
+  let envConfig  = {}, envConfigFiles = [];
 
-  process.argv.slice(2).forEach(function (str) {
-    if (argvConfigExp.test(str)) argvConfig = evaluate(argvConfigExp.exec(str)[1]);
-    if (argvConfigFileExp.test(str)) argvConfigFile = argvConfigFileExp.exec(str)[1];
+  process.argv.slice(2).forEach(function (argv) {
+    if (argvConfigRootDirExp.test(argv)) {
+      configRootDir = argvConfigRootDirExp.exec(argv)[1];
+    }
+    if (argvConfigExp.test(argv)) {
+      console.log('use args : ' + argv);
+      argvConfig = evaluate(argvConfigExp.exec(argv)[1]);
+    }
+    if (argvConfigFileExp.test(argv)) {
+      console.log('use args : ' + argv);
+      argvConfigFiles = argvConfigFileExp.exec(argv)[1].split(',');
+    }
   });
 
+  if (process.env.configRootDir) configRootDir = process.env.configRootDir;
+
+  if (process.env.wntConfig) {
+    console.log('use env config : ' + process.env.wntConfig);
+    envConfig = evaluate(process.env.wntConfig, null);
+  }
+  if (process.env.wntConfigFile) {
+    console.log('use env config file : ' + process.env.wntConfig);
+    envConfigFiles = process.env.wntConfig.split(',');
+  }
+
+  configRootDir = path.resolve(process.platform === 'win32' ? `C:/${configRootDir}` : `/etc/${configRootDir}`);
+  console.log('root config dir : ' + configRootDir);
+
   return watchConfig([
-    {config: `C:/config`, watch: false},
-    {config: `/etc/config`, watch: false},
+    {config: configRootDir, watch: false},
     {config: `${process.cwd()}/config`, watch: false},
-    ...extendDefault.map(file=>({config: file, watch: false})),
+    ...extendDefault.map(file => ({config: file, watch: false})),
 
-    {config: `C:/config/${project.name}`, watch: true},
-    {config: `/etc/config/${project.name}`, watch: true},
-    ...extendWatch.map(file=>({config: file, watch: true})),
+    {config: `${configRootDir}/${project.name}`, watch: true},
+    ...extendWatch.map(file => ({config: file, watch: true})),
 
+    ...envConfigFiles.map(file => ({config: file, watch: true})),
+    {config: envConfig, watch: false},
+
+    ...argvConfigFiles.map(file => ({config: file, watch: true})),
     {config: argvConfig, watch: false},
-    {config: argvConfigFile, watch: true}
+
+    {config: {configRootDir}}
   ]);
 
 }
@@ -75,7 +109,7 @@ function watchConfig(configs) {
 
       if (watch) {
         console.log(`start watching file : ${config}`);
-        return watchModule(config, {}, ()=> {
+        return watchModule(config, {}, () => {
           console.log(`${config} has change, reload.`);
           rebuildConfig();
 
@@ -124,22 +158,5 @@ function resolveFile(path) {
   }
 }
 
-
-/**
- * 获取本机的ipv4地址
- * @returns {*|string}
- */
-function getIpAddress() {
-  let interfaces = require('os').networkInterfaces();
-  for (let devName in interfaces) {
-    let iface = interfaces[devName];
-    for (let i = 0; i < iface.length; i++) {
-      let alias = iface[i];
-      if (alias.family === 'IPv4' && alias.address.indexOf('127') !== 0 && !alias.internal) {
-        return alias.address;
-      }
-    }
-  }
-}
 
 module.exports = loadConfig;
