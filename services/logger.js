@@ -7,25 +7,26 @@ const config = global.config;
 const UUID   = require('uuid');
 const lodash = require('lodash');
 const log4js = require('log4js');
+const mdiff  = require('mdiff').default;
 
 const mkdir     = require('tools/mkdir');
 const before    = require('tools/before');
 const explain   = require('tools/explain');
 const CronTasks = require('tools/CronTasks');
 
-const imAlert = require('services/IMClient').imAlert;
+const imAlert = function () { };
 let logger    = log4js.getLogger(config.logger.logName);
+mkdir(config.logDir);
 
 const alerts   = {warn: {logs: [], firstTime: null}, error: {logs: [], firstTime: null}};
 const cronTask = new CronTasks();
-mkdir(config.logDir);
-
 function reloadConfig() {
 
-  log4js.configure(config.logger.log4js);
+  log4js.configure(lodash.cloneDeep(config.logger.log4js));
 
   //打开IM报警
   if (config.imAlert) log4js.addAppender(imAlertAppender);
+  if (config.elasticUrl && config.logger.elasticLog) log4js.addAppender(elasticAppender());
 
   logger.setLevel(config.logger.logLevel);
 
@@ -35,7 +36,7 @@ function reloadConfig() {
   ]);
 }
 reloadConfig();
-config.onChange(reloadConfig);
+config.onChange(['imAlert', 'logger'], reloadConfig);
 
 //在http请求返回时打印完整的调用日志
 let cLogger = log4js.connectLogger(logger, {
@@ -105,7 +106,7 @@ logger.connectLogger = [loggerProxy, cLogger];
  * IM报警插件
  */
 function imAlertAppender(logEvent) {
-  const log = logEvent.data.join(' ');
+  const log = log4js.layouts.messagePassThroughLayout(logEvent);
   if (logEvent.level.isEqualTo('warn')) {
     let length = alerts.warn.logs.push(log);
     if (length === 1) alerts.warn.firstTime = new Date();
@@ -119,22 +120,104 @@ function imAlertAppender(logEvent) {
   }
 }
 
+function elasticAppender() {
+  log4js.loadAppender('log4js-elasticsearch');
+
+  log4js.layouts.addLayout('runLog', function (config) {
+    return function (logEvent) {
+      return {
+        level    : logEvent.level.levelStr,
+        levelNum : logEvent.level.level,
+        timestamp: logEvent.startTime,
+        log      : log4js.layouts.messagePassThroughLayout(logEvent),
+        ip       : process.ip,
+        exts     : null
+      };
+    };
+  });
+
+  return log4js.appenderMakers['log4js-elasticsearch']({
+    type     : "log4js-elasticsearch",
+    url      : config.elasticUrl,
+    typeName : config.logger.elasticLayout || 'runLog',
+    indexName: config.esIdxName,
+    timeout  : 3000,
+    layout   : {
+      type: config.logger.elasticLayout || 'runLog',
+    }
+  });
+
+}
+
 function cronWarn(interval) {
   if (alerts.warn.logs.length && (alerts.warn.logs.length >= config.minWarn)) {
-    imAlert(`${interval || config.warnCronExp} 间隔内产生 ${alerts.warn.logs.length} 条警告日志: 
-${alerts.warn.logs.map(log => lodash.truncate(log, {length: 64})).join('\n')}`, 1024)
+    imAlert(`${interval || config.warnCronExp} 间隔内产生 ${alerts.warn.logs.length} 条警告日志:\n` + countLogs(alerts.warn.logs), 1024)
       .catch(err => logger.warn(err.message));
-    alerts.warn.logs = [];
   }
+  alerts.warn.logs = [];
 }
 
 function cronError(interval) {
   if (alerts.error.logs.length && (alerts.error.logs.length >= config.minError)) {
-    imAlert(`${interval || config.errorCronExp} 间隔内产生 ${alerts.error.logs.length} 条错误日志: 
-${alerts.error.logs.map(log => lodash.truncate(log, {length: 64})).join('\n')}`, 1024)
+    imAlert(`${interval || config.errorCronExp} 间隔内产生 ${alerts.error.logs.length} 条错误日志:\n` + countLogs(alerts.error.logs), 1024)
       .catch(err => logger.warn(err.message));
-    alerts.error.logs = [];
   }
+  alerts.error.logs = [];
+}
+
+/**
+ * 按数量排序并返回字符串
+ * @param logs
+ */
+function countLogs(logs) {
+  return lodash
+    .chain(groupLogs(logs))
+    .toPairs()
+    .sortBy(1)
+    .reverse()
+    .map(([item, count]) => `${item}\t${count}条`)
+    .join('\n')
+    .value();
+}
+
+
+/**
+ * 如果两个字符串相似度达到80%，则将差异部分改成xxx并返回，如果不相似则返回undefined
+ * @param a
+ * @param b
+ */
+function sameStr(a, b) {
+  const d   = mdiff(a, b);
+  const str = (a.length >= b.length ? a : b).split('');
+  if (d.getLcs() && (d.getLcs().length / str.length) > 0.8) {
+    d.scanDiff(function (aS, aE, bS, bE) {
+      const s = (a.length >= b.length ? aS : bS);
+      const e = (a.length >= b.length ? aE : bE);
+      for (let i = s; i < e; i++) {
+        str[i] = 'x';
+      }
+    });
+    return str.join('');
+  }
+}
+
+/**
+ * 返回按相似字符串做分组后的统计obj
+ * @param logs
+ */
+function groupLogs(logs) {
+  return logs.reduce((obj, log) => {
+    let oldKey = Object.keys(obj).find(key => sameStr(key, log));
+
+    if (oldKey) {
+      let newKey  = sameStr(oldKey, log);
+      obj[newKey] = obj[oldKey] + 1;
+      if (oldKey !== newKey) delete obj[oldKey];
+    } else {
+      obj[log] = 1;
+    }
+    return obj;
+  }, {});
 }
 
 lodash.bindAll(logger, ['log', 'trace', 'debug', 'info', 'warn', 'error', 'fatal']);

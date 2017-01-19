@@ -18,7 +18,7 @@ function watchModule(filePath, target, defaultValue, onChange) {
   var update = function (firstRequire) {
 
     //make a backup
-    var oldModule = Object.assign({}, target);
+    var oldModule = lodash.cloneDeep(target);
 
     try {
       Object.keys(require.cache).forEach(function (cachePath) {
@@ -40,7 +40,7 @@ function watchModule(filePath, target, defaultValue, onChange) {
     }
 
     //callback
-    if (onChange && firstRequire !== true)onChange(null, target);
+    if (onChange && firstRequire !== true) onChange(null, target, oldModule);
 
     return target;
   };

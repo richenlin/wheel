@@ -10,16 +10,16 @@ const _ = require('promixy').setDefault({methods: ['map', 'tap', 'return']});
  * 返回一个amqp的channel实例
  * @param rmqUrl
  * @param maxMsg
- * @return {(Promise|Channel)}
+ * @return {Promise}
  */
 function createClient(rmqUrl, maxMsg = 1024) {
 
-  const connection = _(AMQPLib.connect(rmqUrl, {allowHalfOpen: false}));
+  const connection = _(AMQPLib.connect(rmqUrl, {allowHalfOpen: false, keepAlive: true, keepAliveDelay: 5 * 1000}));
 
   const channel = connection.createChannel();
 
   channel.prefetch(maxMsg);
-  
+
 
   /**
    * 声明一个队列
@@ -37,8 +37,8 @@ function createClient(rmqUrl, maxMsg = 1024) {
    * @returns {*}
    */
   channel._sendToQueue = function (queue, msg, opts) {
-    if (typeof msg === 'object')msg = JSON.stringify(msg);
-    if (!(msg instanceof Buffer))msg = new Buffer(msg);
+    if (typeof msg === 'object') msg = JSON.stringify(msg);
+    if (!(msg instanceof Buffer)) msg = new Buffer(msg);
 
     return channel
       ._assertQueue(queue)
@@ -83,7 +83,7 @@ function createClient(rmqUrl, maxMsg = 1024) {
   /**
    * 回拒所有消息，关闭连接
    */
-  channel.close = ()=> channel.nackAll().then(connection.close);
+  channel.close = () => channel.nackAll().then(connection.close);
 
 
   /**
@@ -101,8 +101,8 @@ function createClient(rmqUrl, maxMsg = 1024) {
    * @returns {Promise}
    */
   channel._publish = function (exchange, key, msg, opts) {
-    if (typeof msg === 'object')msg = JSON.stringify(msg);
-    if (!(msg instanceof Buffer))msg = new Buffer(msg);
+    if (typeof msg === 'object') msg = JSON.stringify(msg);
+    if (!(msg instanceof Buffer)) msg = new Buffer(msg);
     return channel
       ._assertExchange(exchange, 'topic')
       .return(channel)

@@ -12,20 +12,17 @@ const logger = global.logger;
 const config = global.config;
 
 function createClient(mongoUrl) {
-  const db = promixy(MongoClient.connect(mongoUrl, {promiseLibrary: Promise}));
-
-  db
+  const _db          = MongoClient.connect(mongoUrl, {promiseLibrary: Promise});
+  _db.connectSucceed = _db
     .then(function (db) {
-      process.exit = before(()=>db.close(), process.exit);
+      process.exit = before(() => db.close(), process.exit);
       logger.info('mongodb connect success');
     })
     .catch(function (err) {
       logger.fatal('mongodb connect error', err.message);
-      Promise.delay(1000, 1)   //给1秒钟时间报警
-        .then(process.exit);
+      return Promise.reject(err);
     });
-
-  return db;
+  return promixy(_db);
 }
 
 /**

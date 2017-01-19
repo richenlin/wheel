@@ -7,26 +7,30 @@ const URL        = require('url');
 const lodash     = require('lodash');
 const pathRegexp = require('path-to-regexp');
 
+const pave = require('tools/pave');
+
 /**
  * 解析路由对象并将方法挂载在对应路径上，并将req中的数据提取出来
  * @param router
  * @returns {Function}
  */
 module.exports = function (router) {
-  const keyMaps = lodash.map(pave(router), (fn, exp) => {
+  const keyMaps = lodash.map(pave(router, '', '/'), (fn, exp) => {
     let keys = [];
-    return {regExp: pathRegexp(exp, keys), fn, keys};
+    return {regExp: pathRegexp('/' + exp, keys), fn, keys};
   });
 
   return function (req, res, next) {
-    const msg     = Object.assign({}, req.query, req.body);
-    const headers = lodash.mapKeys(req.headers, lodash.camelCase);
-    const path    = URL.parse(req.url).pathname;
-
-    headers.method = req.method.toLowerCase();
+    const path = URL.parse(req.url).pathname;
 
     let match = keyMaps.some(({regExp, fn, keys}) => {
       if (!regExp.test(path)) return false;
+
+      const msg      = Object.assign({}, req.query, req.body);
+      const headers  = lodash.mapKeys(req.headers, lodash.camelCase);
+      headers.method = req.method.toLowerCase();
+      if (req.__logInfo && req.__logInfo.uuid) headers.msgId = req.__logInfo.uuid;
+
       let m = regExp.exec(path);
       keys.forEach((key, i) => msg[key.name] = m[i + 1]);
 
@@ -43,19 +47,6 @@ module.exports = function (router) {
     if (!match) next();
   };
 };
-
-/**
- * 展平路由
- * @param obj
- * @param pre
- * @returns {*}
- */
-function pave(obj, pre = '') {
-  return Object.assign({}, ...lodash.flatMap(obj, (value, key) => {
-    if (lodash.isPlainObject(value)) return pave(value, `${pre}/${key}`);
-    else return {[`${pre}/${key}`]: value};
-  }));
-}
 
 /**
  * 方便生成reject的函数

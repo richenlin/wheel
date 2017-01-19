@@ -4,4 +4,4 @@
 'use strict';
 const inspect  = require('util').inspect;
 const truncate = require('lodash/truncate');
-module.exports = (object, length = 256) => truncate(inspect(object, {depth: null}), {length});
+module.exports = (object, length = 1024) => truncate(inspect(object, {depth: null}).replace(/\n/g, ''), {length});
