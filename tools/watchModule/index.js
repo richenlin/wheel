@@ -1,14 +1,21 @@
 /**
- * Created by xuezhongxiong on 2016/5/12.
+ * Created by ngtmuzi on 2016/5/12.
  */
 'use strict';
-var fs       = require('fs');
-var path     = require('path');
-var chokidar = require('chokidar');
+const fs       = require('fs');
+const path     = require('path');
+const chokidar = require('chokidar');
 
-var lodash = require('lodash');
+const lodash = require('lodash');
 
-function watchModule(filePath, target, defaultValue, onChange) {
+/**
+ * watch and reload file, override it to target
+ * @param filePath      {String}    full file path
+ * @param target        {Object}    target object
+ * @param defaultValue  {Object}    default value
+ * @param onChange      {Function}  on file change callback
+ */
+function watchModule(filePath, target = {}, defaultValue, onChange) {
   if (typeof defaultValue === 'function') {
     onChange     = defaultValue;
     defaultValue = null;
@@ -16,19 +23,25 @@ function watchModule(filePath, target, defaultValue, onChange) {
   //locate file path
   filePath = path.resolve(filePath);
 
-  var update = function (firstRequire) {
+  const update = function (firstRequire) {
 
     //make a backup
-    var oldModule = lodash.cloneDeep(target);
+    const oldModule = lodash.cloneDeep(target);
 
     try {
       Object.keys(require.cache).forEach(function (cachePath) {
         if (cachePath.includes(filePath)) {
+
+          //release the module.parent.children reference, code by fangshi
+          let module = require.cache[cachePath];
+          if (module.parent)
+            module.parent.children.splice(module.parent.children.indexOf(module), 1);
+
           delete require.cache[cachePath];
         }
       });
 
-      var newModule = Object.assign({}, defaultValue, require(filePath));
+      const newModule = Object.assign({}, defaultValue, require(filePath));
       //overwrite target
       override(target, newModule);
     } catch (err) {
@@ -54,6 +67,12 @@ function watchModule(filePath, target, defaultValue, onChange) {
 }
 
 
+/**
+ * make target's property full like source
+ * @param target {Object}
+ * @param source {Object}
+ * @return {*}
+ */
 function override(target, source) {
   Object.keys(target).forEach(function (key) {
     if (!source.hasOwnProperty(key)) delete target[key];
