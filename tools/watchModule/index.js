@@ -1,9 +1,10 @@
 /**
- * Created by ngtmuzi on 2016/5/12.
+ * Created by xuezhongxiong on 2016/5/12.
  */
 'use strict';
-var fs   = require('fs');
-var path = require('path');
+var fs       = require('fs');
+var path     = require('path');
+var chokidar = require('chokidar');
 
 var lodash = require('lodash');
 
@@ -46,7 +47,8 @@ function watchModule(filePath, target, defaultValue, onChange) {
   };
 
   //防抖动
-  fs.watch(filePath, {recursive: true}, lodash.debounce(update, 300));
+  // fs.watch(filePath, {recursive: true}, lodash.debounce(update, 300));
+  chokidar.watch(filePath).on('all', lodash.debounce(update, 300));
 
   return update(true);
 }
