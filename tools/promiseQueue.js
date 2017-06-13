@@ -1,4 +1,8 @@
+/**
+ * @link https://ngtmuzi.github.io/实现一个简单的promise队列
+ */
 "use strict";
+
 var Promise = require('bluebird');
 
 /**
@@ -87,6 +91,22 @@ Queue.prototype._consumer = function () {
       self.runCount--;
       setImmediate(self.consumer);
     });
+};
+
+/**
+ * 包裹函数，将对其的调用加入到当前队列
+ * @param fn  {Function}
+ * @param thisArg
+ * @returns {Function}
+ */
+Queue.prototype.wrapFn = function (fn, thisArg) {
+  var self = this;
+  return function () {
+    var _args = arguments;
+    return self.add(function () {
+      return fn.apply(thisArg, _args);
+    });
+  };
 };
 
 module.exports = Queue;
