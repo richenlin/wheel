@@ -3,110 +3,59 @@
  */
 "use strict";
 
-var Promise = require('bluebird');
+class Queue {
+  constructor({promiseLibrary, concurrency} = {}) {
+    this.concurrency = isNaN(+concurrency) ? 1 : +concurrency;
+    this.queue       = [];
+    this.runCount    = 0;
+    this.Promise     = promiseLibrary || Promise;
+    this._wait       = this.Promise.resolve();
+  }
 
-/**
- * promise的执行队列
- * @param concurrency 并发数
- * @constructor
- */
-function Queue(concurrency) {
-  if (!(this instanceof Queue)) return new Queue(concurrency);
+  add(fn) {
+    return new this.Promise((resolve, reject) => {
+      this.queue.push(() =>
+        this._wait
+          .then(fn)
+          .then(value => this._wait.then(() => value))
+          .then(resolve, reject)
+      );
+      this.consume();
+    });
+  }
 
-  this.consumer = this._consumer.bind(this);
-  this.queue    = [];
-  this.runCount = 0;
-  this.config(concurrency);
-  this.consumer   = this._consumer.bind(this);
-  this.pauseState = false;
-  this.wait       = Promise.resolve();
+  consume() {
+    while (this.runCount < this.concurrency && this.queue.length) {
+      this.runCount++;
+
+      this.queue.shift()()
+        .then(() => {
+          this.runCount--;
+          this.consume();
+        });
+    }
+  }
+
+  pause() {
+    this._wait = new this.Promise((resolve) => {
+      this._waitForResume = resolve;
+    });
+  }
+
+  resume() {
+    this._waitForResume && this._waitForResume();
+    this.consume();
+  }
+
+  warp(fn, thisArg) {
+    const self   = this;
+    const warpFn = function () {
+      return self.add(fn.bind(thisArg, ...arguments));
+    };
+    warpFn.queue = this;
+
+    return warpFn;
+  }
 }
-
-/**
- * 添加函数到队列
- * @param fn
- */
-Queue.prototype.add = function (fn) {
-  var queue = this.queue;
-  setImmediate(this.consumer);
-
-  return new Promise(function (resolve, reject) {
-    queue.push(function () {
-      return Promise.try(fn)
-        .then(resolve, reject);
-    });
-  });
-};
-
-/**
- * 配置并发数
- * @param concurrency 并发数
- */
-Queue.prototype.config = function (concurrency) {
-  this.concurrency = +concurrency || 1;
-  for (var i = 0; i < this.concurrency; i++) {
-    setImmediate(this.consumer);
-  }
-};
-
-/**
- * 暂停
- */
-Queue.prototype.pause = function () {
-  var self        = this;
-  this.pauseState = true;
-  this.wait       = new Promise(function (resolve) {
-    self.waitForResume = resolve;
-  });
-};
-
-/**
- * 恢复
- */
-Queue.prototype.resume = function () {
-  this.pauseState = false;
-  this.waitForResume && this.waitForResume();
-  for (var i = 0; i < this.concurrency; i++) {
-    setImmediate(this.consumer);
-  }
-};
-
-/**
- * 消费
- */
-Queue.prototype._consumer = function () {
-  var self = this;
-
-  if (this.runCount >= this.concurrency ||
-    this.queue.length === 0 ||
-    this.pauseState
-  ) return;
-
-  this.runCount++;
-  Promise.try(this.queue.shift())
-    .tap(function () {
-      return self.wait;
-    })
-    .finally(function () {
-      self.runCount--;
-      setImmediate(self.consumer);
-    });
-};
-
-/**
- * 包裹函数，将对其的调用加入到当前队列
- * @param fn  {Function}
- * @param thisArg
- * @returns {Function}
- */
-Queue.prototype.wrapFn = function (fn, thisArg) {
-  var self = this;
-  return function () {
-    var _args = arguments;
-    return self.add(function () {
-      return fn.apply(thisArg, _args);
-    });
-  };
-};
 
 module.exports = Queue;
