@@ -1,4 +1,7 @@
 # wheel
+
+[![Greenkeeper badge](https://badges.greenkeeper.io/richenlin/wheel.svg)](https://greenkeeper.io/)
+
 日常工作造的各种轮子，应该跟业务没有任何关系  
 应该位于项目的node_modules文件夹内，避免在不同地方引用找不到路径  
 
