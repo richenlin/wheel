@@ -1,0 +1,9 @@
+{
+  "groups": {
+    "default": {
+      "packages": [
+        "tools/watchModule/package.json"
+      ]
+    }
+  }
+}
